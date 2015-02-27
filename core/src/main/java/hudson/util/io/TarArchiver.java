@@ -31,12 +31,9 @@ import hudson.util.FileVisitor;
 import hudson.util.IOUtils;
 import org.apache.tools.tar.TarEntry;
 
-import java.io.BufferedOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.OutputStream;
+import java.io.*;
 import java.lang.reflect.Field;
+import java.nio.channels.FileLock;
 
 import static org.apache.tools.tar.TarConstants.LF_SYMLINK;
 
@@ -101,22 +98,30 @@ final class TarArchiver extends Archiver {
         int mode = IOUtils.mode(file);
         if (mode!=-1)   te.setMode(mode);
         te.setModTime(file.lastModified());
-        if(!file.isDirectory())
-            te.setSize(file.length());
 
-        tar.putNextEntry(te);
+        FileOutputStream out = new FileOutputStream(file);
+        FileLock lock = out.getChannel().lock();
 
-        if (!file.isDirectory()) {
-            FileInputStream in = new FileInputStream(file);
-            try {
-                int len;
-                while((len=in.read(buf))>=0)
-                    tar.write(buf,0,len);
-            } finally {
-                in.close();
+        try {
+            if (!file.isDirectory())
+                te.setSize(file.length());
+
+            tar.putNextEntry(te);
+
+            if (!file.isDirectory()) {
+                FileInputStream in = new FileInputStream(file);
+                try {
+                    int len;
+                    while ((len = in.read(buf)) >= 0)
+                        tar.write(buf, 0, len);
+                } finally {
+                    in.close();
+                }
             }
         }
-
+        finally {
+            lock.release();
+        }
         tar.closeEntry();
         entriesWritten++;
     }
